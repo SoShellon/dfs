@@ -20,7 +20,7 @@ func main() {
 	commandPort, _ := strconv.Atoi(args[1])
 	namingPort, _ := strconv.Atoi(args[2])
 	dirPath := args[3]
-	core.InitStorageNode(namingPort, dirPath)
+	core.InitStorageNode(commandPort, namingPort, namingPort, dirPath)
 	server := web.GetStorageServer(clientPort, commandPort)
 	server.Run()
 }

@@ -5,10 +5,10 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func buildErrorResponse(msg string) map[string]string {
-	return map[string]string{
-		"exception_type": msg,
-		"exception_info": "IllegalStateException",
+func registerError(msg string) (int, map[string]string) {
+	return 409, map[string]string{
+		"exception_info": msg,
+		"exception_type": "IllegalStateException",
 	}
 }
 
@@ -18,13 +18,13 @@ func HandleRegister(c *gin.Context) {
 	node := &core.StorageNode{}
 	err := c.Bind(node)
 	if err != nil {
-		c.JSON(409, buildErrorResponse(err.Error()))
+		c.JSON(registerError(err.Error()))
 		return
 	}
 	registrar := core.GetRegistrar()
 	duplicateFiles, err := registrar.AddStorageNode(node)
 	if err != nil {
-		c.JSON(409, buildErrorResponse(err.Error()))
+		c.JSON(registerError(err.Error()))
 		return
 	}
 	c.JSON(200, gin.H{"files": duplicateFiles})
