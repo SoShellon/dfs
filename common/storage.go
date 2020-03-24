@@ -6,10 +6,10 @@ import (
 
 //StorageNode is the metadata for a storage node
 type StorageNode struct {
-	StorageIP   string
-	ClientPort  int
-	CommandPort int
-	Files       []string
+	StorageIP   string   `json:"storage_ip"`
+	ClientPort  int      `json:"client_port"`
+	CommandPort int      `json:"command_port"`
+	Files       []string `json:"files"`
 }
 
 //GetIndexKey give the unique key to index the node

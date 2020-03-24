@@ -2,11 +2,14 @@ package core
 
 import (
 	"errors"
+	"fmt"
+	"strings"
 
 	"cmu.edu/dfs/common"
 )
 
 const (
+	errorNotDir   = "no such dir"
 	errorNoFile   = "no such file"
 	errorNoParent = "no parent directory"
 )
@@ -64,19 +67,21 @@ func (f *fileNode) validate(parts []string) bool {
 	return false
 }
 
-func (f *fileNode) insert(parts []string, index string) {
+func (f *fileNode) insert(parts []string, index string, isDir bool) {
 	cur := f
 	for _, part := range parts {
 		if cur.childNodes[part] == nil {
 			node := buildDir()
 			node.token = part
 			node.parent = cur
+			node.index = index
 			cur.childNodes[part] = node
 		}
 		cur = cur.childNodes[part]
 	}
-	cur.isDir = false
+	cur.isDir = isDir
 	cur.index = index
+	common.Log("%s add new file node:%+v", index, parts)
 }
 func buildDir() *fileNode {
 	return &fileNode{
@@ -107,27 +112,54 @@ func GetRegistrar() *Registrar {
 	return r
 }
 
+//ValidatePath determine a path is valid
+func (r *Registrar) ValidatePath(path string) bool {
+	if len(path) == 0 {
+		return false
+	}
+	return true
+}
+
 //AddStorageNode tries to add a new storage node
 func (r *Registrar) AddStorageNode(node *common.StorageNode) ([]string, error) {
 	key := node.GetIndexKey()
 	if r.storageNodes[key] != nil {
-		return nil, errors.New("this storage client already registered")
+		return nil, errors.New("this storage client already registered:" + key)
 	}
 	r.storageNodes[key] = node
-	duplicates := []string{}
+	duplicates := make([]string, 0)
+	// for _, path := range node.Files {
+	// 	succ, _ := r.CreateFile(path)
+	// 	if !succ {
+	// 		duplicates = append(duplicates, path)
+	// 	}
+	// }
 	for i, file := range node.GetFileTokens() {
 		valid := r.globalRoot.validate(file)
 		if valid {
-			r.globalRoot.insert(file, key)
-		} else {
+			r.globalRoot.insert(file, key, false)
+		} else if node.Files[i] != "/" {
 			duplicates = append(duplicates, node.Files[i])
 		}
 	}
 	return duplicates, nil
 }
 
+func (r *Registrar) getStorageNode(node *fileNode) *common.StorageNode {
+	//root node
+	if node.parent == nil {
+		for _, node := range r.storageNodes {
+			return node
+		}
+	}
+	return r.storageNodes[node.index]
+}
+
 //Exists checks whether a file exists
 func (r *Registrar) Exists(file string) bool {
+	if !strings.HasPrefix(file, "/") {
+		return false
+	}
 	tokens := common.Tokenize(file)
 	return r.globalRoot.search(tokens) != nil
 }
@@ -143,7 +175,10 @@ func (r *Registrar) GetStorageNode(path string) (*common.StorageNode, error) {
 }
 
 func (r *Registrar) getParentNode(parts []string) *fileNode {
-	parentParts := parts[0:len(parts)]
+	if len(parts) == 0 {
+		return nil
+	}
+	parentParts := parts[:len(parts)-1]
 	fileNode := r.globalRoot.search(parentParts)
 	return fileNode
 }
@@ -151,20 +186,63 @@ func (r *Registrar) getParentNode(parts []string) *fileNode {
 //CreateFile create a file in the file system
 func (r *Registrar) CreateFile(path string) (bool, error) {
 	parts := common.Tokenize(path)
-	parentDir := r.getParentNode(parts)
-	if parentDir != nil {
+	if len(parts) == 0 {
+		return false, nil
+	}
+	fileNode := r.getParentNode(parts)
+	if fileNode == nil {
 		return false, errors.New(errorNoParent)
 	}
+	if !fileNode.isDir {
+		return false, errors.New(errorNotDir)
+	}
+	sub := parts[len(parts)-1:]
+	child := fileNode.search(sub)
+	if child != nil {
+		return false, nil
+	}
+	storageNode := r.getStorageNode(fileNode)
+	req := &struct {
+		Path string `json:"path"`
+	}{path}
+	resp := &struct {
+		Success       bool   `json:"success"`
+		ExceptionInfo string `json:"exception_info"`
+	}{}
+	err := common.SendRequest(fmt.Sprintf("%s:%d/storage_create", storageNode.StorageIP, storageNode.CommandPort), req, resp)
+	if err != nil {
+		return false, err
+	}
+	if !resp.Success {
+		if len(resp.ExceptionInfo) > 0 {
+			return false, errors.New(resp.ExceptionInfo)
+		}
+		return false, nil
+	}
+	fileNode.insert(sub, storageNode.GetIndexKey(), false)
 	return true, nil
 }
 
 //CreateDir creates a directory in the file system
 func (r *Registrar) CreateDir(path string) (bool, error) {
 	parts := common.Tokenize(path)
+	if len(parts) == 0 {
+		return false, nil
+	}
 	fileNode := r.getParentNode(parts)
-	if fileNode != nil {
+	if fileNode == nil {
 		return false, errors.New(errorNoParent)
 	}
+	if !fileNode.isDir {
+		return false, errors.New(errorNotDir)
+	}
+	sub := parts[len(parts)-1:]
+	child := fileNode.search(sub)
+	if child != nil {
+		return false, nil
+	}
+	storageNode := r.getStorageNode(fileNode)
+	fileNode.insert(sub, storageNode.GetIndexKey(), true)
 	return true, nil
 }
 
@@ -192,7 +270,17 @@ func (r *Registrar) ListFiles(path string) ([]string, error) {
 		return res, nil
 	}
 	for _, node := range fileNode.childNodes {
-		res = append(res, prefix+"/"+node.token)
+		res = append(res, node.token)
 	}
 	return res, nil
+}
+
+//IsDir determin whether a file is a directory
+func (r *Registrar) IsDir(path string) (bool, error) {
+	parts := common.Tokenize(path)
+	fileNode := r.globalRoot.search(parts)
+	if fileNode == nil {
+		return false, errors.New("no file found")
+	}
+	return fileNode.isDir, nil
 }

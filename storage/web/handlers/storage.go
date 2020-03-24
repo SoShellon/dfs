@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"fmt"
+
 	"cmu.edu/dfs/storage/core"
 	"github.com/gin-gonic/gin"
 )
@@ -11,6 +13,10 @@ func HandleSize(c *gin.Context) {
 
 	c.BindJSON(&params)
 	s := core.GetStorageNode()
+	if !s.ValidatePath(params.Path) {
+		c.JSON(illegalArgumentError("empty path"))
+		return
+	}
 	size, err := s.GetFileSize(params.Path)
 
 	if err != nil {
@@ -25,6 +31,15 @@ func HandleRead(c *gin.Context) {
 	params := &fileParams{}
 	c.BindJSON(&params)
 	s := core.GetStorageNode()
+	if !s.ValidatePath(params.Path) {
+		c.JSON(illegalArgumentError("empty path"))
+		return
+	}
+	if !s.WithinBounds(params.Path, params.Offset, params.Length) {
+		c.JSON(indexOutOfBoundsException(fmt.Sprintf("out of bounds:%d,%d",
+			params.Offset, params.Length)))
+		return
+	}
 	data, err := s.Read(params.Path, params.Offset, params.Length)
 
 	if err != nil {
@@ -39,10 +54,18 @@ func HandleWrite(c *gin.Context) {
 	params := &fileParams{}
 	c.BindJSON(&params)
 	s := core.GetStorageNode()
+	if !s.ValidatePath(params.Path) {
+		c.JSON(illegalArgumentError("empty path"))
+		return
+	}
+	if params.Offset < 0 || params.Length < 0 {
+		c.JSON(indexOutOfBoundsException("out of bounds"))
+		return
+	}
 	data, err := s.Write(params.Path, params.Offset, params.Data)
 	if err != nil {
 		c.JSON(fileNotFoundError(err.Error()))
 		return
 	}
-	c.JSON(200, gin.H{"data": data})
+	c.JSON(200, gin.H{"success": data})
 }

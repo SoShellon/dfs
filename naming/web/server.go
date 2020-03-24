@@ -19,6 +19,12 @@ func GetNamingServer(servicePort int, registerationPort int) common.Server {
 func (n *namingServer) runService() error {
 	engine := gin.Default()
 	engine.POST("/is_valid_path", handlers.HandleIsValidPath)
+	engine.POST("/getstorage", handlers.HandleGetStorage)
+	engine.POST("/delete", handlers.HandleDelete)
+	engine.POST("/create_directory", handlers.HandleCreateDirectory)
+	engine.POST("/create_file", handlers.HandleCreateFile)
+	engine.POST("/list", handlers.HandleList)
+	engine.POST("/is_directory", handlers.HandleIsDir)
 	return common.RunServer(engine, n.servicePort)
 }
 

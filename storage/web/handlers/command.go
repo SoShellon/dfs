@@ -7,11 +7,14 @@ import (
 
 //HandleCreate handle the request of creating a file from client
 func HandleCreate(c *gin.Context) {
-	req := &pathParams{}
-	c.Bind(req)
+	params := &pathParams{}
+	c.BindJSON(params)
 	s := core.GetStorageNode()
-
-	success, err := s.CreateFile(req.Path)
+	if !s.ValidatePath(params.Path) {
+		c.JSON(illegalArgumentError("empty path"))
+		return
+	}
+	success, err := s.CreateFile(params.Path)
 
 	if err != nil {
 		c.JSON(illegalArgumentError(err.Error()))
@@ -23,11 +26,14 @@ func HandleCreate(c *gin.Context) {
 
 //HandleDelete handles the request of deleting a file
 func HandleDelete(c *gin.Context) {
-	req := &pathParams{}
-	c.Bind(req)
+	params := &pathParams{}
+	c.BindJSON(params)
 	s := core.GetStorageNode()
-
-	success, err := s.DeleteFile(req.Path)
+	if !s.ValidatePath(params.Path) {
+		c.JSON(illegalArgumentError("empty path"))
+		return
+	}
+	success, err := s.DeleteFile(params.Path)
 
 	if err != nil {
 		c.JSON(illegalArgumentError(err.Error()))
@@ -35,4 +41,12 @@ func HandleDelete(c *gin.Context) {
 	}
 
 	c.JSON(200, gin.H{"success": success})
+}
+
+//HandleCopy handle the request of copying a file from another storage server
+func HandleCopy(c *gin.Context) {
+	// params := &copyParams {}
+	// c.BindJSON(params)
+	// s := core.GetStorageNode()
+
 }

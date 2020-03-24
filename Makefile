@@ -32,6 +32,8 @@ include build/Makefile.separator
 all-classes :
 	javac -cp $(JARFILE) $(JAVAFILES)
 	# TODO: add command to compile your naming and storage server.
+	go build -o naming/naming_server naming/main.go 
+	go build -o storage/storage_server storage/main.go 
 	# end
 
 # Run conformance tests.
@@ -47,7 +49,7 @@ checkpoint : all-classes
 .PHONY : clean
 clean :
 	rm -rf $(JAVAFILES:.java=.class) $(ARCHIVE)  $(DOCDIR) $(ALLDOCDIR)
-
+	rm naming/naming_server storage/storage_server
 # Generate documentation for the public interfaces of the principal packages.
 .PHONY : docs
 docs :

@@ -19,8 +19,9 @@ public class Config {
      * After we run this command in the project's root directory, it should start a naming server
      * that listen on 2 ports: 8080 (for SERVICE) and 8090 (for REGISTRATION). 
     */
-    public static final String startNaming = String.format("java -cp .%sgson-2.8.6.jar " +
-            "naming.NamingServer 8080 8090", separator);
+    public static final String startNaming = "./naming/naming_server 8080 8090 ";
+        // String.format("java -cp .%sgson-2.8.6.jar " +
+        //     "naming.NamingServer 8080 8090", separator);
 
     /**
      * Command to start the first storage server.
@@ -31,8 +32,9 @@ public class Config {
      * It will also register it self through the naming server's REGISTRATION port 8090.
      * This storage server will store all its files under the directory '/tmp/dist-systems-0'
     */
-    public static final String startStorage0 = String.format("java -cp .%sgson-2.8.6.jar " +
-            "storage.StorageServer 7000 7001 8090 /tmp/dist-systems-0", separator);
+    public static final String startStorage0 = "./storage/storage_server 7000 7001 8090 /tmp/dist-systems-0";
+//     String.format("java -cp .%sstorage%smain.go " +
+//             " 7000 7001 8090 /tmp/dist-systems-0", separator, separator);
 
     /**
      * Command to start the second storage server.
@@ -43,6 +45,7 @@ public class Config {
      * It will also register it self through the naming server's REGISTRATION port 8090.
      * This storage server will store all its files under the directory '/tmp/dist-systems-1'
     */
-    public static final String startStorage1 = String.format("java -cp .%sgson-2.8.6.jar " +
-            "storage.StorageServer 7010 7011 8090 /tmp/dist-systems-1", separator);
+    public static final String startStorage1 = "./storage/storage_server 7010 7011 8090 /tmp/dist-systems-1";
+        // String.format("go run .%snaming%smain.go " +
+        //     "7010 7011 8090 /tmp/dist-systems-1", separator, separator);
 }

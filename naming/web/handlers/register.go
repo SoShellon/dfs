@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"cmu.edu/dfs/common"
 	"cmu.edu/dfs/naming/core"
 	"github.com/gin-gonic/gin"
 )
@@ -15,8 +16,8 @@ func registerError(msg string) (int, map[string]string) {
 //HandleRegister handle the request of
 //Registering a storage server with the naming server
 func HandleRegister(c *gin.Context) {
-	node := &core.StorageNode{}
-	err := c.Bind(node)
+	node := &common.StorageNode{}
+	err := c.BindJSON(node)
 	if err != nil {
 		c.JSON(registerError(err.Error()))
 		return
