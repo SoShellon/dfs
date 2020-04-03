@@ -11,10 +11,72 @@ import (
 )
 
 const (
-	errorNotDir   = "no such dir"
-	errorNoFile   = "no such file"
-	errorNoParent = "no parent directory"
+	errorNotDir       = "no such dir"
+	errorNoFile       = "no such file"
+	errorNoParent     = "no parent directory"
+	rwmutexMaxReaders = 1 << 30
 )
+
+//NotBuiltinRWLock is not a built-in reader-writer lock
+type NotBuiltinRWLock struct {
+	w           sync.Mutex // held if there are pending writers
+	writerSem   chan int   // semaphore for writers to wait for completing readers
+	readerSem   chan int   // semaphore for readers to wait for completing writers
+	readerCount int32      // number of pending readers
+	readerWait  int32      // number of departing readers
+}
+
+func newRWLock() *NotBuiltinRWLock {
+	return &NotBuiltinRWLock{
+		writerSem: make(chan int),
+		readerSem: make(chan int),
+	}
+}
+
+//Lock behaves as writer lock
+func (rw *NotBuiltinRWLock) Lock() {
+	rw.w.Lock()
+	// Announce to readers there is a pending writer.
+	r := atomic.AddInt32(&rw.readerCount, -rwmutexMaxReaders) + rwmutexMaxReaders
+	// Wait for active readers.
+	if r != 0 && atomic.AddInt32(&rw.readerWait, r) != 0 {
+		<-rw.writerSem
+	}
+}
+
+//Unlock behaves as writer unlock
+func (rw *NotBuiltinRWLock) Unlock() {
+	// Announce to readers there is no active writer.
+	r := atomic.AddInt32(&rw.readerCount, rwmutexMaxReaders)
+	// Unblock blocked readers, if any.
+	for i := 0; i < int(r); i++ {
+		rw.readerSem <- 1
+	}
+
+	// Allow other writers to proceed.
+	rw.w.Unlock()
+}
+
+//RLock behaves as reader lock
+func (rw *NotBuiltinRWLock) RLock() {
+	if atomic.AddInt32(&rw.readerCount, 1) < 0 {
+		// A writer is pending, wait for it.
+		<-rw.readerSem
+	}
+}
+
+//RUnlock behaves as reader unlock
+func (rw *NotBuiltinRWLock) RUnlock() {
+	if r := atomic.AddInt32(&rw.readerCount, -1); r < 0 {
+		// Outlined slow-path to allow the fast-path to be inlined
+		if atomic.AddInt32(&rw.readerWait, -1) == 0 {
+			// The last reader unblocks the writer.
+			rw.writerSem <- 1
+		}
+	}
+}
+
+var x = sync.RWMutex{}
 
 type fileNode struct {
 	isDir      bool
@@ -22,7 +84,7 @@ type fileNode struct {
 	index      string
 	slave      []string
 	token      string
-	rwlock     sync.RWMutex
+	rwlock     *NotBuiltinRWLock
 	countLock  sync.Mutex
 	readCount  int32
 	parent     *fileNode
@@ -109,7 +171,7 @@ func buildDir() *fileNode {
 	return &fileNode{
 		isDir:      true,
 		childNodes: map[string]*fileNode{},
-		rwlock:     sync.RWMutex{},
+		rwlock:     newRWLock(),
 		readCount:  0,
 	}
 }
