@@ -25,6 +25,8 @@ func (n *namingServer) runService() error {
 	engine.POST("/create_file", handlers.HandleCreateFile)
 	engine.POST("/list", handlers.HandleList)
 	engine.POST("/is_directory", handlers.HandleIsDir)
+	engine.POST("/unlock", handlers.HandleUnlock)
+	engine.POST("/lock", handlers.HandleLock)
 	return common.RunServer(engine, n.servicePort)
 }
 

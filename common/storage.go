@@ -10,6 +10,7 @@ type StorageNode struct {
 	ClientPort  int      `json:"client_port"`
 	CommandPort int      `json:"command_port"`
 	Files       []string `json:"files"`
+	ServerPort  int      `json:"server_port"`
 }
 
 //GetIndexKey give the unique key to index the node

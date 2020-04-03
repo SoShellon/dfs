@@ -1,6 +1,9 @@
 package handlers
 
 import (
+	"fmt"
+
+	"cmu.edu/dfs/common"
 	"cmu.edu/dfs/storage/core"
 	"github.com/gin-gonic/gin"
 )
@@ -45,8 +48,22 @@ func HandleDelete(c *gin.Context) {
 
 //HandleCopy handle the request of copying a file from another storage server
 func HandleCopy(c *gin.Context) {
-	// params := &copyParams {}
-	// c.BindJSON(params)
-	// s := core.GetStorageNode()
-
+	params := &struct {
+		pathParams
+		ServerIP   string `json:"server_ip"`
+		ServerPort int    `json:"server_port"`
+	}{}
+	c.BindJSON(params)
+	s := core.GetStorageNode()
+	if !s.ValidatePath(params.Path) {
+		c.JSON(illegalArgumentError("empty path"))
+		return
+	}
+	success, err := s.CopyFile(params.Path, &common.StorageNode{
+		StorageIP: params.ServerIP, ClientPort: params.ServerPort})
+	if err != nil {
+		c.JSON(fileNotFoundError(fmt.Sprintf("%s does not exist", params.Path)))
+		return
+	}
+	c.JSON(200, gin.H{"success": success})
 }

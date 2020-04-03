@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
+	"sync/atomic"
 
 	"cmu.edu/dfs/common"
 )
@@ -18,15 +20,35 @@ type fileNode struct {
 	isDir      bool
 	childNodes map[string]*fileNode
 	index      string
+	slave      []string
 	token      string
+	rwlock     sync.RWMutex
+	countLock  sync.Mutex
+	readCount  int32
 	parent     *fileNode
+}
+
+func (f *fileNode) lock(exclusive bool) {
+	if exclusive {
+		f.rwlock.Lock()
+	} else {
+		f.rwlock.RLock()
+	}
+}
+
+func (f *fileNode) unlock(exclusive bool) {
+	if exclusive {
+		f.rwlock.Unlock()
+	} else {
+		f.rwlock.RUnlock()
+	}
 }
 
 func (f *fileNode) getFullName() string {
 	res := ""
 	cur := f
 	for cur.parent != nil {
-		res = cur.token + res
+		res = "/" + cur.token + res
 		cur = cur.parent
 	}
 	return res
@@ -87,6 +109,8 @@ func buildDir() *fileNode {
 	return &fileNode{
 		isDir:      true,
 		childNodes: map[string]*fileNode{},
+		rwlock:     sync.RWMutex{},
+		readCount:  0,
 	}
 }
 
@@ -145,6 +169,9 @@ func (r *Registrar) AddStorageNode(node *common.StorageNode) ([]string, error) {
 	return duplicates, nil
 }
 
+func (r *Registrar) getStorageNodeWithIndex(index string) *common.StorageNode {
+	return r.storageNodes[index]
+}
 func (r *Registrar) getStorageNode(node *fileNode) *common.StorageNode {
 	//root node
 	if node.parent == nil {
@@ -152,7 +179,7 @@ func (r *Registrar) getStorageNode(node *fileNode) *common.StorageNode {
 			return node
 		}
 	}
-	return r.storageNodes[node.index]
+	return r.getStorageNodeWithIndex(node.index)
 }
 
 //Exists checks whether a file exists
@@ -253,6 +280,11 @@ func (r *Registrar) Delete(path string) (bool, error) {
 	if fileNode == nil {
 		return false, errors.New(errorNoFile)
 	}
+	list := []string{}
+	for key := range r.storageNodes {
+		list = append(list, key)
+	}
+	r.deleteReplications(path, list)
 	return fileNode.delete(), nil
 }
 
@@ -275,7 +307,7 @@ func (r *Registrar) ListFiles(path string) ([]string, error) {
 	return res, nil
 }
 
-//IsDir determin whether a file is a directory
+//IsDir determine whether a file is a directory
 func (r *Registrar) IsDir(path string) (bool, error) {
 	parts := common.Tokenize(path)
 	fileNode := r.globalRoot.search(parts)
@@ -283,4 +315,82 @@ func (r *Registrar) IsDir(path string) (bool, error) {
 		return false, errors.New("no file found")
 	}
 	return fileNode.isDir, nil
+}
+
+//Lock locks the file node
+func (r *Registrar) Lock(path string, exclusive bool) {
+	parts := common.Tokenize(path)
+	cur := r.globalRoot
+	for _, part := range parts {
+		cur.lock(false)
+		cur = cur.childNodes[part]
+	}
+	cur.lock(exclusive)
+
+}
+
+func (r *Registrar) getReplicationNodes(file *fileNode) []string {
+	others := []string{}
+	for key, value := range r.storageNodes {
+		if key != file.index {
+			others = append(others, value.GetIndexKey())
+		}
+	}
+	return others
+}
+func (r *Registrar) deleteReplications(path string, list []string) {
+	req := &struct {
+		Path string `json:"path"`
+	}{path}
+	resp := &struct {
+		Success       bool   `json:"success"`
+		ExceptionInfo string `json:"exception_info"`
+	}{}
+	for _, index := range list {
+		storageNode := r.getStorageNodeWithIndex(index)
+		common.SendRequest(fmt.Sprintf("%s:%d/storage_delete", storageNode.StorageIP, storageNode.CommandPort), req, resp)
+	}
+}
+
+//Unlock unlocks the file node
+func (r *Registrar) Unlock(path string, exclusive bool) {
+	parts := common.Tokenize(path)
+	cur := r.globalRoot
+	for _, part := range parts {
+		cur.unlock(false)
+		cur = cur.childNodes[part]
+	}
+	cur.unlock(exclusive)
+	if !cur.isDir {
+		if !exclusive {
+			//read request
+			if cur.readCount >= 20 {
+				cur.countLock.Lock()
+				defer cur.countLock.Unlock()
+				if cur.readCount >= 20 {
+					cur.readCount = 0
+				}
+				master := r.getStorageNode(cur)
+				req := &struct {
+					Path       string `json:"path"`
+					ServerIP   string `json:"server_ip"`
+					ServerPort int    `json:"server_port"`
+				}{path, master.StorageIP, master.ClientPort}
+				resp := &struct {
+					Success       bool   `json:"success"`
+					ExceptionInfo string `json:"exception_info"`
+				}{}
+				cur.slave = r.getReplicationNodes(cur)
+				for _, index := range cur.slave {
+					storageNode := r.getStorageNodeWithIndex(index)
+					common.SendRequest(fmt.Sprintf("%s:%d/storage_copy", storageNode.StorageIP, storageNode.CommandPort), req, resp)
+				}
+			} else {
+				atomic.AddInt32(&cur.readCount, 1)
+			}
+		} else {
+			//write request
+			r.deleteReplications(path, cur.slave)
+		}
+	}
 }

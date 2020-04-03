@@ -89,10 +89,13 @@ func HandleList(c *gin.Context) {
 
 //HandleDelete handles the request of deleting a file or directory
 func HandleDelete(c *gin.Context) {
-	params := struct {
-		Path string `json:"Path"`
-	}{}
+	params := &pathParams{}
+	c.BindJSON(params)
 	r := core.GetRegistrar()
+	if !r.ValidatePath(params.Path) {
+		c.JSON(illegalArgumentError("empty path"))
+		return
+	}
 	success, err := r.Delete(params.Path)
 	if err != nil {
 		c.JSON(fileNotFoundError(err.Error()))

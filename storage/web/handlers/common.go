@@ -1,13 +1,7 @@
 package handlers
 
-import "cmu.edu/dfs/common"
-
 type pathParams struct {
 	Path string `json:"path"`
-}
-type copyParams struct {
-	pathParams
-	common.StorageNode
 }
 type fileParams struct {
 	Path   string `json:"path"`

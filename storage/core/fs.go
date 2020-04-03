@@ -210,7 +210,55 @@ func (s *SingleFileSystem) DeleteFile(path string) (bool, error) {
 
 //CopyFile copy a file from another storage server
 func (s *SingleFileSystem) CopyFile(path string, node *common.StorageNode) (bool, error) {
-	return false, nil
+	size, err := s.getRemoteSize(path, node)
+	if err != nil {
+		return false, err
+	}
+	_, err = s.CreateFile(path)
+	if err != nil {
+		return false, err
+	}
+	data, err := s.getRemoteBytes(path, size, node)
+	if err != nil {
+		return false, err
+	}
+	_, err = s.Write(path, 0, data)
+	if err != nil {
+		return false, err
+	}
+	fullName := s.getFullPath(path)
+	err = os.Truncate(fullName, int64(size))
+	return true, err
+}
+func (s *SingleFileSystem) getRemoteBytes(path string, size int, storageNode *common.StorageNode) ([]byte, error) {
+	req := &struct {
+		Path   string `json:"path"`
+		Offset int    `json:"offset"`
+		Length int    `json:"length"`
+	}{path, 0, size}
+	resp := &struct {
+		Data          []byte `json:"data"`
+		ExceptionInfo string `json:"exception_info"`
+	}{}
+	common.SendRequest(fmt.Sprintf("%s:%d/storage_read", storageNode.StorageIP, storageNode.ClientPort), req, resp)
+	if len(resp.ExceptionInfo) > 0 {
+		return nil, errors.New(resp.ExceptionInfo)
+	}
+	return resp.Data, nil
+}
+func (s *SingleFileSystem) getRemoteSize(path string, storageNode *common.StorageNode) (int, error) {
+	req := &struct {
+		Path string `json:"path"`
+	}{path}
+	resp := &struct {
+		Size          int    `json:"size"`
+		ExceptionInfo string `json:"exception_info"`
+	}{}
+	common.SendRequest(fmt.Sprintf("%s:%d/storage_size", storageNode.StorageIP, storageNode.ClientPort), req, resp)
+	if len(resp.ExceptionInfo) > 0 {
+		return 0, errors.New(resp.ExceptionInfo)
+	}
+	return resp.Size, nil
 }
 
 //ValidatePath determines whether the path is valid
